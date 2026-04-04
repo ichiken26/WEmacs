@@ -1,0 +1,70 @@
+# Build outputs
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio / MSBuild
+.vs/
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]uild/
+*.pidb
+*.svclog
+*.cachefile
+*.VC.db
+*.VC.VC.opendb
+*.opensdf
+*.sdf
+*.dbmdl
+*.dbproj.schemaview
+*.pfx
+*.publishsettings
+orleans.codegen.cs
+
+# NuGet
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# .NET tooling
+*.DotSettings.user
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotCover
+*.coverage
+*.coveragexml
+TestResults/
+[Bb]enchmark[Rr]esult*/
+*.trx
+coverage*.json
+coverage*.xml
+coverage*.info
+
+# Rider
+.idea/
+*.sln.iml
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# OS / editor (ローカル設定のみ無視する場合は下記を有効化)
+# .vscode/settings.json
