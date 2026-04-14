@@ -11,4 +11,10 @@
     <PackageReference Include="MouseKeyHook" Version="5.7.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="keybindings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

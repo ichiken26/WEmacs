@@ -1,0 +1,9 @@
+{
+  "bindings": [
+    {
+      "key": "P",
+      "log": "Emacs Move: Up",
+      "sendKeys": "{UP}"
+    }
+  ]
+}

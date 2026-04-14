@@ -3,9 +3,8 @@ using System.Runtime.InteropServices;
 namespace WEMacs;
 
 /// <summary>
-/// Caps Lock を OS に届けず捨て、代わりに <see cref="SendInput"/> で F13 を送る。
-/// 低レベルフックは「チェーンの先頭（最後に SetWindowsHookEx したもの）」が先に呼ばれるため、
-/// 他の LL フックより後に <see cref="Install"/> すること。
+/// 旧実装。CapsLock を F13 に置き換える別案として参照用に保持。
+/// 現在の実行経路では <see cref="CapsLockKeyHook"/> を使用する。
 /// </summary>
 public sealed class CapsLockToF13Remapper : IDisposable
 {
