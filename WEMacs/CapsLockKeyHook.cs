@@ -16,6 +16,7 @@ public sealed class CapsLockKeyHook : IDisposable
     private const uint LlkhfUp = 0x80;
 
     private const int VkCapital = 0x14;
+    private const int VkEisu = 0xF0;
     private const ushort VkF13 = 0x7C;
 
     private const uint InputKeyboard = 1;
@@ -23,6 +24,9 @@ public sealed class CapsLockKeyHook : IDisposable
 
     private IntPtr _hookId = IntPtr.Zero;
     private readonly LowLevelKeyboardProc _proc;
+    private bool _isF13Down;
+
+    public event EventHandler<bool>? F13StateChanged;
 
     public CapsLockKeyHook()
     {
@@ -44,6 +48,8 @@ public sealed class CapsLockKeyHook : IDisposable
         if (_hookId == IntPtr.Zero)
             return;
 
+        EnsureF13Released();
+
         if (!UnhookWindowsHookEx(_hookId))
             throw new InvalidOperationException($"UnhookWindowsHookEx failed: {Marshal.GetLastWin32Error()}");
 
@@ -55,18 +61,25 @@ public sealed class CapsLockKeyHook : IDisposable
         if (nCode == HcAction)
         {
             var info = Marshal.PtrToStructure<Kbdllhookstruct>(lParam);
-            if (info.VkCode == VkCapital)
+            if (info.VkCode == VkCapital || info.VkCode == VkEisu)
             {
                 var msg = unchecked((uint)(nint)wParam);
-                bool keyUp;
-                if (msg == WmKeyup || msg == WmSyskeyup)
-                    keyUp = true;
-                else if (msg == WmKeydown || msg == WmSyskeydown)
-                    keyUp = false;
-                else
-                    keyUp = (info.Flags & LlkhfUp) != 0;
+                // 一部配列/IME では wParam より flags(LLKHF_UP) の方が正確に KeyUp を示す。
+                var keyUp = (info.Flags & LlkhfUp) != 0;
+                if (!keyUp)
+                {
+                    if (msg == WmKeyup || msg == WmSyskeyup)
+                        keyUp = true;
+                    else if (msg == WmKeydown || msg == WmSyskeydown)
+                        keyUp = false;
+                }
 
-                if (!TrySendF13(keyUp))
+                if (!keyUp)
+                    Console.WriteLine($"[TRACE] CapsLock KeyDown captured (vk={info.VkCode})");
+                else
+                    Console.WriteLine($"[TRACE] CapsLock KeyUp captured (vk={info.VkCode})");
+
+                if (!TrySendF13Transition(keyUp))
                     return CallNextHookEx(_hookId, nCode, wParam, lParam);
 
                 return (IntPtr)1;
@@ -74,6 +87,32 @@ public sealed class CapsLockKeyHook : IDisposable
         }
 
         return CallNextHookEx(_hookId, nCode, wParam, lParam);
+    }
+
+    private bool TrySendF13Transition(bool keyUp)
+    {
+        if (!keyUp)
+        {
+            if (_isF13Down)
+                return true;
+
+            if (!TrySendF13(keyUp: false))
+                return false;
+
+            _isF13Down = true;
+            F13StateChanged?.Invoke(this, true);
+            return true;
+        }
+
+        if (!_isF13Down)
+            return true;
+
+        if (!TrySendF13(keyUp: true))
+            return false;
+
+        _isF13Down = false;
+        F13StateChanged?.Invoke(this, false);
+        return true;
     }
 
     private static bool TrySendF13(bool keyUp)
@@ -89,6 +128,18 @@ public sealed class CapsLockKeyHook : IDisposable
 
         var input = new Input { Type = InputKeyboard, Ki = ki };
         return SendInput(1, [input], Marshal.SizeOf<Input>()) == 1;
+    }
+
+    private void EnsureF13Released()
+    {
+        if (!_isF13Down)
+            return;
+
+        if (TrySendF13(keyUp: true))
+        {
+            _isF13Down = false;
+            F13StateChanged?.Invoke(this, false);
+        }
     }
 
     public void Dispose()
