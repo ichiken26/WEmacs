@@ -22,25 +22,23 @@ public sealed class CapsLockKeyHook : IDisposable
 
     private const uint InputKeyboard = 1;
     private const uint KeyeventfKeyup = 0x0002;
-    private const int UpDownMergeWindowMs = 8;
     private const int MissingKeyUpTimeoutMs = 40;
 
     private IntPtr _hookId = IntPtr.Zero;
     private readonly LowLevelKeyboardProc _proc;
     private readonly object _stateGate = new();
-    private readonly Timer _deferredKeyUpTimer;
-    private readonly Timer _missingKeyUpTimer;
+    private readonly Timer _releaseTimer;
     private bool _isF13Down;
     private bool _isCapsPhysicalDown;
-    private bool _hasDeferredF13Up;
+    private long _lastCapsEventAtMs;
 
     public event EventHandler<bool>? F13StateChanged;
 
     public CapsLockKeyHook()
     {
         _proc = HookCallback;
-        _deferredKeyUpTimer = new Timer(_ => FlushDeferredF13Up(), null, Timeout.Infinite, Timeout.Infinite);
-        _missingKeyUpTimer = new Timer(_ => FlushMissingKeyUp(), null, Timeout.Infinite, Timeout.Infinite);
+        _releaseTimer = new Timer(_ => FlushReleaseTimer(), null, Timeout.Infinite, Timeout.Infinite);
+        _lastCapsEventAtMs = Environment.TickCount64;
     }
 
     public void Install()
@@ -89,11 +87,11 @@ public sealed class CapsLockKeyHook : IDisposable
 
                     Console.WriteLine(
                         $"[TRACE] Caps event raw: vk={info.VkCode}, scan={info.ScanCode}, flags=0x{info.Flags:X}, msg=0x{msg:X}, up={keyUp}, injected={isInjected}, capsPhysicalDown={_isCapsPhysicalDown}, f13Down={_isF13Down}");
+                    _lastCapsEventAtMs = Environment.TickCount64;
+                    _releaseTimer.Change(MissingKeyUpTimeoutMs, Timeout.Infinite);
 
                     if (keyUp)
                     {
-                        _missingKeyUpTimer.Change(Timeout.Infinite, Timeout.Infinite);
-
                         if (!_isCapsPhysicalDown)
                         {
                             Console.WriteLine("[TRACE] Ignored CapsLock KeyUp (received before KeyDown).");
@@ -105,25 +103,12 @@ public sealed class CapsLockKeyHook : IDisposable
 
                         if (_isF13Down)
                         {
-                            _hasDeferredF13Up = true;
-                            _deferredKeyUpTimer.Change(UpDownMergeWindowMs, Timeout.Infinite);
-                            Console.WriteLine($"[TRACE] Deferred F13 KeyUp ({UpDownMergeWindowMs}ms window).");
+                            Console.WriteLine($"[TRACE] Scheduled F13 KeyUp ({MissingKeyUpTimeoutMs}ms after physical KeyUp).");
                             return (IntPtr)1;
                         }
                     }
                     else
                     {
-                        _missingKeyUpTimer.Change(MissingKeyUpTimeoutMs, Timeout.Infinite);
-
-                        if (_hasDeferredF13Up)
-                        {
-                            // KeyDown が続く間は KeyUp を保留し続ける。8ms 静かになった時点で KeyUp を流す。
-                            _isCapsPhysicalDown = true;
-                            _deferredKeyUpTimer.Change(UpDownMergeWindowMs, Timeout.Infinite);
-                            Console.WriteLine($"[TRACE] Extended deferred F13 KeyUp by {UpDownMergeWindowMs}ms (KeyDown still arriving).");
-                            return (IntPtr)1;
-                        }
-
                         if (_isCapsPhysicalDown)
                         {
                             Console.WriteLine("[TRACE] Ignored repeated CapsLock KeyDown.");
@@ -199,9 +184,7 @@ public sealed class CapsLockKeyHook : IDisposable
     {
         lock (_stateGate)
         {
-            _hasDeferredF13Up = false;
-            _deferredKeyUpTimer.Change(Timeout.Infinite, Timeout.Infinite);
-            _missingKeyUpTimer.Change(Timeout.Infinite, Timeout.Infinite);
+            _releaseTimer.Change(Timeout.Infinite, Timeout.Infinite);
 
             if (!_isF13Down)
                 return;
@@ -215,47 +198,27 @@ public sealed class CapsLockKeyHook : IDisposable
         }
     }
 
-    private void FlushDeferredF13Up()
+    private void FlushReleaseTimer()
     {
         lock (_stateGate)
         {
-            if (!_hasDeferredF13Up)
-                return;
-
-            _hasDeferredF13Up = false;
             if (!_isF13Down)
                 return;
 
-            if (!TrySendF13(keyUp: true))
+            var elapsed = Environment.TickCount64 - _lastCapsEventAtMs;
+            if (elapsed < MissingKeyUpTimeoutMs)
             {
-                Console.WriteLine($"[TRACE] Deferred F13 KeyUp failed (lastError={Marshal.GetLastWin32Error()})");
+                _releaseTimer.Change(MissingKeyUpTimeoutMs - (int)elapsed, Timeout.Infinite);
                 return;
             }
 
-            Console.WriteLine("[TRACE] F13 KeyUp recognized (injected/deferred)");
-            _isF13Down = false;
-            _isCapsPhysicalDown = false;
-            F13StateChanged?.Invoke(this, false);
-        }
-    }
-
-    private void FlushMissingKeyUp()
-    {
-        lock (_stateGate)
-        {
-            if (!_isF13Down || !_isCapsPhysicalDown)
-                return;
-
-            _hasDeferredF13Up = false;
-            _deferredKeyUpTimer.Change(Timeout.Infinite, Timeout.Infinite);
-
             if (!TrySendF13(keyUp: true))
             {
-                Console.WriteLine($"[TRACE] Missing-KeyUp fallback failed (lastError={Marshal.GetLastWin32Error()})");
+                Console.WriteLine($"[TRACE] Timed F13 KeyUp failed (lastError={Marshal.GetLastWin32Error()})");
                 return;
             }
 
-            Console.WriteLine($"[TRACE] Missing-KeyUp fallback fired ({MissingKeyUpTimeoutMs}ms): forced F13 KeyUp.");
+            Console.WriteLine($"[TRACE] F13 KeyUp recognized (timed {MissingKeyUpTimeoutMs}ms).");
             _isF13Down = false;
             _isCapsPhysicalDown = false;
             F13StateChanged?.Invoke(this, false);
@@ -264,8 +227,7 @@ public sealed class CapsLockKeyHook : IDisposable
 
     public void Dispose()
     {
-        _missingKeyUpTimer.Dispose();
-        _deferredKeyUpTimer.Dispose();
+        _releaseTimer.Dispose();
         Uninstall();
         GC.SuppressFinalize(this);
     }
