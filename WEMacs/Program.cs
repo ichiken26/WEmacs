@@ -29,14 +29,14 @@ internal static class Program
 
         globalHook.KeyDown += (_, e) =>
         {
-            if (IsF13Like(e))
-                Console.WriteLine($"[TRACE] F13 KeyDown recognized (keyCode={e.KeyCode}, keyValue={e.KeyValue})");
-
             if (!isF13Pressed)
                 return;
 
             if (!bindings.TryGetValue(e.KeyCode, out var binding))
+            {
+                Console.WriteLine($"[TRACE] Got KeyValue(KeyCode: {e.KeyCode})");
                 return;
+            }
 
             e.Handled = true;
             if (!activeBindings.Add(e.KeyCode))
@@ -48,9 +48,6 @@ internal static class Program
 
         globalHook.KeyUp += (_, e) =>
         {
-            if (IsF13Like(e))
-                Console.WriteLine($"[TRACE] F13 KeyUp recognized (keyCode={e.KeyCode}, keyValue={e.KeyValue})");
-
             if (!activeBindings.Remove(e.KeyCode))
                 return;
 
@@ -62,10 +59,5 @@ internal static class Program
         };
 
         Application.Run();
-    }
-
-    private static bool IsF13Like(KeyEventArgs e)
-    {
-        return e.KeyCode == Keys.F13 || e.KeyValue == 124 || e.KeyValue == 240 || e.KeyValue == 20;
     }
 }
